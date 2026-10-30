@@ -242,29 +242,33 @@ describe('AuthRepository', () => {
 
     describe('registerAttempt', () => {
         it('should increment attempts and return remaining attempts', async () => {
-            mockExecute
-                .mockResolvedValueOnce({ rowsAffected: 1 })
-                .mockResolvedValueOnce({ rows: [{ attempt_count: 2 }] });
+            mockExecute.mockResolvedValueOnce({ rows: [{ attempt_count: 2 }] });
 
             const result = await repository.registerAttempt('email', 'test@example.com');
             expect(result).toEqual({ blocked: false, attemptsLeft: 3 });
+            expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
+                sql: expect.stringContaining('RETURNING email_attempt_count'),
+                args: [5, '+2 hours', 'test@example.com']
+            }));
         });
 
         it('should block when attempts reach the maximum', async () => {
             mockExecute
-                .mockResolvedValueOnce({ rowsAffected: 1 })
                 .mockResolvedValueOnce({ rows: [{ attempt_count: 5 }] })
                 .mockResolvedValueOnce({ rowsAffected: 1 });
 
             const result = await repository.registerAttempt('email', 'test@example.com');
             expect(result).toEqual({ blocked: true, attemptsLeft: 0 });
-            expect(mockExecute).toHaveBeenLastCalledWith(expect.objectContaining({
+            expect(mockExecute).toHaveBeenNthCalledWith(1, expect.objectContaining({
                 sql: expect.stringContaining('email_blocked_until')
+            }));
+            expect(mockExecute).toHaveBeenLastCalledWith(expect.objectContaining({
+                sql: expect.stringContaining('email_attempt_count = 0')
             }));
         });
 
         it('should return full attempts when the user does not exist', async () => {
-            mockExecute.mockResolvedValueOnce({ rowsAffected: 0 });
+            mockExecute.mockResolvedValueOnce({ rows: [] });
 
             const result = await repository.registerAttempt('code', 'nouser@example.com');
             expect(result).toEqual({ blocked: false, attemptsLeft: 5 });

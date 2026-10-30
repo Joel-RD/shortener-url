@@ -1,15 +1,20 @@
 {
   "name": "shortener-url",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "API de acortador de URLs con autenticación por código de verificación",
   "type": "module",
+  "main": "dist/src/run.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "nodemon src/run.ts",
-    "build": "tsc",
+    "build": "tsc && npm run copy:assets",
+    "copy:assets": "node -e \"require('fs').cpSync('src/Database/schema.sql','dist/src/Database/schema.sql',{recursive:true})\"",
     "start": "node dist/src/run.js",
+    "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS=\"--experimental-vm-modules\" jest",
-    "snowflake": "tsx src/utils/snowflake.ts",
+    "test:coverage": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --coverage",
     "stress": "STRESS_TEST=true tsx ./test/stress/stress-tester.ts",
     "stress:full": "NODE_ENV=production STRESS_TEST=true tsx ./test/stress/stress-tester.ts"
   },
@@ -17,22 +22,16 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@libsql/client": "^0.17.0",
     "@types/autocannon": "^7.12.7",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
-    "@types/dotenv": "^6.1.1",
-    "@types/express": "^4.17.21",
-    "@types/express-rate-limit": "^5.1.3",
+    "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.10",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^7.0.9",
     "@types/supertest": "^6.0.3",
-    "@types/yamljs": "^0.2.34",
     "autocannon": "^8.0.0",
     "jest": "^30.2.0",
     "nodemon": "^3.1.11",
@@ -45,20 +44,16 @@
   "dependencies": {
     "@libsql/client": "^0.17.0",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.6.2",
     "cookie-parser": "^1.4.7",
-    "cookies": "^0.9.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
-    "express-validator": "^7.3.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
     "nanoid": "^5.1.9",
     "nodemailer": "^8.0.5",
-    "winston": "^3.19.0",
-    "yamljs": "^0.3.0"
+    "winston": "^3.19.0"
   }
 }

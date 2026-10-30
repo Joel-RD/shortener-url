@@ -29,7 +29,7 @@ async function runHeavyStress() {
           if (status === 200 || status === 201) {
             try {
               const data = JSON.parse(body.toString());
-              context.shortPath = new URL(data.url_acortada).pathname;
+              context.shortPath = new URL(data.data.url_acortada).pathname;
             } catch (e) {
               context.shortPath = null;
             }

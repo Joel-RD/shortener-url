@@ -1,6 +1,21 @@
-import { IUrlRepository } from "../models/types.js"
+import { IUrlRepository } from "../models/types.js";
 import { Client } from "@libsql/client";
 import logger from "../utils/logger.js";
+
+/** Se lanza cuando el `short_url` generado ya existe (colisión de nanoid). */
+export class ShortUrlCollisionError extends Error {
+    constructor(shortUrl: string) {
+        super(`El identificador corto "${shortUrl}" ya existe`);
+        this.name = "ShortUrlCollisionError";
+    }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+    const code = (error as { code?: string } | null)?.code;
+    if (typeof code === "string" && code.includes("CONSTRAINT_UNIQUE")) return true;
+    const message = error instanceof Error ? error.message : String(error);
+    return /unique constraint failed/i.test(message);
+}
 
 export class UrlRepository implements IUrlRepository {
     constructor(private DB: Client) { }
@@ -31,8 +46,23 @@ export class UrlRepository implements IUrlRepository {
             });
             return short_url;
         } catch (error) {
+            if (isUniqueConstraintError(error)) {
+                throw new ShortUrlCollisionError(short_url);
+            }
             logger.error('Error en create repository', { error, short_url, original_url });
             throw new Error(`Error creando la URL en el repositorio: ${error}`);
+        }
+    }
+
+    async incrementViews(short_url: string): Promise<void> {
+        try {
+            await this.DB.execute({
+                sql: "UPDATE urls SET views = views + 1 WHERE short_url = ?",
+                args: [short_url]
+            });
+        } catch (error) {
+            logger.error('Error en incrementViews repository', { error, short_url });
+            throw new Error(`Error incrementando las visitas: ${error}`);
         }
     }
 }

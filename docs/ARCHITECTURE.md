@@ -53,13 +53,13 @@ Ruta (Router) → Controller → Service → Repository → Base de datos
 Cada router instancia su propia cadena de dependencias:
 
 ```typescript
-// src/routers/usersRouters.ts
+// src/routers/urlRouter.ts
 const urlRepository = new UrlRepository(turso);
 const urlService = new UrlService(urlRepository);
 const urlController = new UrlController(urlService);
 
-router.get("/:shortUrl", url_Short, urlController.redirectShortController);
-router.post("/api/v1/short", redirectShort, urlController.shortenerController);
+router.post("/api/v1/short", shortenRateLimit, urlController.shortenerController);
+router.get("/:shortUrl", shortUrlFormatGuard, redirectRateLimit, urlController.redirectShortController);
 
 // src/routers/userAuthRouter.ts
 const authRepository = new AuthRepository(turso);
@@ -84,9 +84,9 @@ const authController = new AuthController(authService);
 
 | Aspecto | Detalle |
 |---------|---------|
-| **Herramienta** | `crypto.randomBytes` (`src/utils/codeValidatedEmail.ts`) |
+| **Herramienta** | `crypto.randomInt` (`src/utils/codeValidatedEmail.ts`) |
 | **Longitud** | 6 caracteres por defecto |
-| **Conjunto** | `A-Za-z0-9` |
+| **Conjunto** | `A-Z0-9` (se normaliza a mayúsculas al verificar) |
 | **Expiración** | 10 minutos (definido en la query SQL) |
 | **Limpieza automática** | Triggers eliminan códigos expirados y usados |
 
@@ -231,9 +231,11 @@ Middleware `authJWT` en `src/middleware/authJWT.ts`:
 
 1. Extrae el token de la cabecera `Authorization: Bearer <token>`
 2. Si no existe → `401`
-3. Verifica el JWT con `jsonwebtoken`
-4. Extrae `userEmail` del payload y lo inyecta en `req.userEmail`
-5. Si el token está expirado → `401`; si la firma es inválida → `403`
+3. Verifica firma, expiración, `iss` y `aud` del JWT
+4. Comprueba que el claim `typ` sea `session` (un token de verificación no sirve como sesión)
+5. Extrae `userEmail` del payload, lo normaliza y lo inyecta en `req.userEmail`
+6. `requireActiveUser` comprueba en BD que el usuario exista, tenga `email_verified = 1` y `account_active = 1`
+7. Si el token está expirado → `401`; si la firma es inválida → `403`
 
 > **Nota:** la referencia HTTP completa (cuerpos de solicitud y respuestas) está en la [Referencia de la API](API.md).
 
@@ -248,7 +250,7 @@ El proceso cubre ambas operaciones del servicio: acortar (`POST /api/v1/short`) 
 ### Acortar (`POST /api/v1/short`)
 
 1. **Validar anti-SSRF** → `validateDomain` comprueba protocolo, hostname, IPs privadas y TLD (ver [Seguridad](SECURITY.md#validación-de-urls-anti-ssrf))
-2. **Generar código** → `nanoid(8)` alfanumérico URL-safe
+2. **Generar código** → `nanoid(8)` alfanumérico URL-safe (hasta 3 reintentos si hay colisión)
 3. **Guardar** → `UrlRepository` inserta la fila en `urls` vía LibSQL
 4. **Responder** → `200` con la URL acortada `http://localhost:3000/abc12345`
 

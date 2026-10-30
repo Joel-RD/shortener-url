@@ -30,6 +30,7 @@ describe('AuthService', () => {
         verifyVerificationCode: jest.Mock;
         updateUsedVerificationCode: jest.Mock;
         markEmailVerified: jest.Mock;
+        deleteVerificationCode: jest.Mock;
     };
     let service: AuthService;
 
@@ -52,7 +53,8 @@ describe('AuthService', () => {
             getActiveVerificationCode: jest.fn().mockResolvedValue(null),
             verifyVerificationCode: jest.fn().mockResolvedValue(true),
             updateUsedVerificationCode: jest.fn().mockResolvedValue(undefined),
-            markEmailVerified: jest.fn().mockResolvedValue(undefined)
+            markEmailVerified: jest.fn().mockResolvedValue(undefined),
+            deleteVerificationCode: jest.fn().mockResolvedValue(undefined)
         };
         service = new AuthService(repository as any);
         emailServiceMock.sendVerificationEmail.mockClear();
@@ -80,10 +82,19 @@ describe('AuthService', () => {
             expect(emailServiceMock.sendVerificationEmail).toHaveBeenCalledWith('test@gmail.com', expect.any(String));
         });
 
-        it('should throw a 401 AppError when registration data is invalid', async () => {
+        it('should throw a 400 AppError when registration data is invalid', async () => {
             await expect(service.register({ username: 'x', email: 'invalid', password: 'weak' }))
-                .rejects.toMatchObject({ statusCode: 401, message: 'Los datos de registro no son válidos' });
+                .rejects.toMatchObject({ statusCode: 400, message: 'Los datos de registro no son válidos' });
             expect(repository.findByEmail).not.toHaveBeenCalled();
+        });
+
+        it('should normalize the email and username before storing them', async () => {
+            await service.register({ username: '  TestUser  ', email: '  Test@Gmail.COM ', password: 'StrongP@ssw0rd!' });
+
+            expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({
+                username: 'TestUser',
+                email: 'test@gmail.com'
+            }));
         });
 
         it('should throw a 429 AppError when the email is blocked', async () => {
@@ -103,8 +114,18 @@ describe('AuthService', () => {
                 statusCode: 409,
                 message: 'El email ya está registrado'
             });
-            expect(repository.registerAttempt).toHaveBeenCalledWith('email', 'test@gmail.com');
+            expect(repository.registerAttempt).not.toHaveBeenCalled();
             expect(repository.create).not.toHaveBeenCalled();
+        });
+
+        it('should delete the code and return 502 when the verification email cannot be sent', async () => {
+            emailServiceMock.sendVerificationEmail.mockRejectedValueOnce(new Error('SMTP down'));
+
+            await expect(service.register(validInput)).rejects.toMatchObject({
+                statusCode: 502,
+                code: 'EMAIL_SEND_FAILED'
+            });
+            expect(repository.deleteVerificationCode).toHaveBeenCalledWith('test@gmail.com');
         });
     });
 
@@ -139,12 +160,13 @@ describe('AuthService', () => {
             await expect(service.login(validInput)).rejects.toMatchObject({ statusCode: 429 });
         });
 
-        it('should throw a 404 AppError when the email is not found', async () => {
+        it('should throw a 401 AppError with a generic message when the email is not found', async () => {
             repository.findByEmail.mockResolvedValue(null);
 
             await expect(service.login(validInput)).rejects.toMatchObject({
-                statusCode: 404,
-                message: 'Email no encontrado'
+                statusCode: 401,
+                message: 'Credenciales no válidas',
+                code: 'INVALID_CREDENTIALS'
             });
         });
 
@@ -161,9 +183,10 @@ describe('AuthService', () => {
 
             await expect(service.login(validInput)).rejects.toMatchObject({
                 statusCode: 401,
-                message: 'Contraseña incorrecta'
+                message: 'Credenciales no válidas'
             });
             expect(repository.registerAttempt).toHaveBeenCalledWith('password', 'test@gmail.com');
+            expect(repository.registerAttempt).toHaveBeenCalledWith('email', 'test@gmail.com');
         });
 
         it('should throw a 429 AppError when there is an active verification code', async () => {
@@ -202,24 +225,30 @@ describe('AuthService', () => {
             expect(repository.verifyVerificationCode).not.toHaveBeenCalled();
         });
 
-        it('should throw a 404 AppError when the email is not found', async () => {
+        it('should throw a 400 AppError when the email is not found', async () => {
             repository.findByEmail.mockResolvedValue(null);
 
             await expect(service.verifyEmailCode(validInput)).rejects.toMatchObject({
-                statusCode: 404,
-                message: 'Email no encontrado'
+                statusCode: 400,
+                message: 'Código de verificación incorrecto'
             });
         });
 
-        it('should throw a 404 AppError and register an attempt on wrong code', async () => {
+        it('should throw a 400 AppError and register an attempt on wrong code', async () => {
             repository.verifyVerificationCode.mockResolvedValue(false);
 
             await expect(service.verifyEmailCode(validInput)).rejects.toMatchObject({
-                statusCode: 404,
+                statusCode: 400,
                 message: 'Código de verificación incorrecto'
             });
             expect(repository.registerAttempt).toHaveBeenCalledWith('code', 'test@gmail.com');
             expect(repository.markEmailVerified).not.toHaveBeenCalled();
+        });
+
+        it('should normalize the email and code before verifying', async () => {
+            await service.verifyEmailCode({ email: ' Test@Gmail.com ', code: ' abc123 ' });
+
+            expect(repository.verifyVerificationCode).toHaveBeenCalledWith('test@gmail.com', 'ABC123');
         });
     });
 });

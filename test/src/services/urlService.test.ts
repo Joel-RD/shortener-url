@@ -1,18 +1,21 @@
 import { jest } from '@jest/globals';
 import { UrlService } from '../../../src/services/urlService';
+import { ShortUrlCollisionError } from '../../../src/repository/urlRepository';
 import { AppError } from '../../../src/utils/AppError';
 
 describe('UrlService', () => {
     let repository: {
         findById: jest.Mock;
         create: jest.Mock;
+        incrementViews: jest.Mock;
     };
     let service: UrlService;
 
     beforeEach(() => {
         repository = {
             findById: jest.fn(),
-            create: jest.fn()
+            create: jest.fn(),
+            incrementViews: jest.fn().mockResolvedValue(undefined)
         };
         service = new UrlService(repository as any);
     });
@@ -30,12 +33,39 @@ describe('UrlService', () => {
             );
         });
 
+        it('should trim the original url before storing it', async () => {
+            repository.create.mockResolvedValue('abc12345');
+
+            await service.shorten('  https://www.google.com  ');
+
+            expect(repository.create).toHaveBeenCalledWith(expect.any(String), 'https://www.google.com');
+        });
+
         it('should throw a 400 AppError for a non-permitted url', async () => {
             await expect(service.shorten('ftp://example.com')).rejects.toMatchObject({
                 statusCode: 400,
                 message: 'URL no permitida'
             });
             expect(repository.create).not.toHaveBeenCalled();
+        });
+
+        it('should throw a 400 AppError when the url is missing', async () => {
+            await expect(service.shorten(undefined as unknown as string)).rejects.toMatchObject({
+                statusCode: 400,
+                code: 'URL_REQUIRED'
+            });
+            expect(repository.create).not.toHaveBeenCalled();
+        });
+
+        it('should retry when the generated short id collides', async () => {
+            repository.create
+                .mockRejectedValueOnce(new ShortUrlCollisionError('abc12345'))
+                .mockResolvedValueOnce('def67890');
+
+            const result = await service.shorten('https://www.google.com');
+
+            expect(result).toBe('def67890');
+            expect(repository.create).toHaveBeenCalledTimes(2);
         });
 
         it('should propagate repository errors', async () => {
@@ -53,11 +83,13 @@ describe('UrlService', () => {
 
             expect(result).toBe('https://www.google.com');
             expect(repository.findById).toHaveBeenCalledWith('abc12345');
+            expect(repository.incrementViews).toHaveBeenCalledWith('abc12345');
         });
 
-        it('should throw a 401 AppError for an empty short url', async () => {
-            await expect(service.redirect('')).rejects.toMatchObject({ statusCode: 401 });
-            await expect(service.redirect(undefined as unknown as string)).rejects.toMatchObject({ statusCode: 401 });
+        it('should throw a 400 AppError for an empty or malformed short url', async () => {
+            await expect(service.redirect('')).rejects.toMatchObject({ statusCode: 400 });
+            await expect(service.redirect(undefined as unknown as string)).rejects.toMatchObject({ statusCode: 400 });
+            await expect(service.redirect('bad!')).rejects.toMatchObject({ statusCode: 400 });
             expect(repository.findById).not.toHaveBeenCalled();
         });
 

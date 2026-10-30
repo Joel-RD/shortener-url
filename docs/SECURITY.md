@@ -9,8 +9,8 @@
 | Mecanismo | Detalle |
 |-----------|---------|
 | **Helmet** | Cabeceras HTTP seguras (CSP y cross-origin en producción) |
-| **CORS** | Solo permite el origen configurado en `DOMAIN_FOR_FRONTEND` |
-| **Rate limiting** | Por IP: 5.000/h shorten, 50.000/h redirect, 4/día auth (producción) |
+| **CORS** | Solo permite los orígenes configurados en `CORS_ORIGINS` / `FRONTEND_ORIGIN` |
+| **Rate limiting** | Por IP: 5.000/h shorten, 50.000/h redirect, 20/15 min auth (producción) |
 | **Bloqueo de intentos** | 5 intentos máximos → bloqueo de 2 h (email/contraseña) o 1 h (código) |
 | **Cookie HttpOnly (verificación)** | El código de verificación usa la cookie temporal `emailSendToVerifyUser` (HttpOnly, SameSite, Secure en producción); el JWT de sesión viaja en el header `Authorization: Bearer` |
 | **Contraseñas** | Bcryptjs con 10 rounds; mínimo 12 caracteres con requisitos de complejidad |
@@ -27,7 +27,7 @@ Configurados en `src/main.ts`:
 | Middleware | Función |
 |-----------|---------|
 | **Helmet** | Cabeceras HTTP seguras (CSP y cross-origin solo en producción) |
-| **CORS** | Origen restringido a `DOMAIN_FOR_FRONTEND` con `credentials: true` |
+| **CORS** | Origen restringido a `CORS_ORIGINS` / `FRONTEND_ORIGIN` con `credentials: true` |
 | **Cookie Parser** | Parseo de cookies para la verificación temporal de email |
 | **express.json** | Parseo de cuerpos JSON |
 | **express.urlencoded** | Parseo de cuerpos URL-encoded |
@@ -38,8 +38,10 @@ Configurados en `src/main.ts`:
 Middlewares específicos de rutas:
 
 - **`limitAuthButton`** — rate limiting en endpoints de auth
-- **`redirectShort`** / **`url_Short`** — rate limiting en endpoints de URLs
+- **`shortenRateLimit`** — rate limiting en `POST /api/v1/short`
+- **`redirectRateLimit`** — rate limiting en `GET /:shortUrl`
 - **`authJWT`** — validación del `Authorization: Bearer <token>` en rutas protegidas
+- **`requireActiveUser`** — comprueba en BD que el usuario siga verificado y activo
 - **`verifySendToEmail`** — validación de la cookie temporal de verificación
 
 ---
@@ -50,12 +52,14 @@ Configurado en `src/utils/limitClick.ts` usando `express-rate-limit`:
 
 | Endpoint | Ventana | Límite (producción) | Límite (desarrollo) | Alias en código |
 |----------|---------|---------------------|---------------------|-----------------|
-| `POST /api/v1/short` | 1 hora | 5.000 | 1.000.000 | `redirectShort` |
-| `GET /:shortUrl` | 1 hora | 50.000 | 1.000.000 | `url_Short` |
-| Auth (register, login, verify-email) | 24 horas | 4 | 2.000 | `limitAuthButton` |
+| `POST /api/v1/short` | 1 hora | 5.000 | 1.000.000 | `shortenRateLimit` |
+| `GET /:shortUrl` | 1 hora | 50.000 | 1.000.000 | `redirectRateLimit` |
+| Auth (register, login, verify-email) | 15 minutos | 20 | 2.000 | `limitAuthButton` |
 
-- En modo stress test (`STRESS_TEST=true`), los rate limits de URLs se deshabilitan.
+- En modo stress test (`STRESS_TEST=true`), los rate limits se deshabilitan.
 - Se usa `ipKeyGenerator` de `express-rate-limit` como generador de claves.
+- Configura `TRUST_PROXY` cuando la API esté detrás de un proxy o balanceador; sin ello `req.ip` sería la IP del proxy y el límite se compartiría entre todos los clientes.
+- El store por defecto es en memoria; para despliegues con varias instancias usa un store externo (Redis).
 
 ---
 
@@ -86,20 +90,22 @@ El **JWT de sesión** no se guarda en cookies: se devuelve en el campo `data.aut
 Configuración base en `src/config.ts` → `configCookiesParams` (aplica a la cookie temporal):
 
 - `httpOnly`: `true` (a menos que `HTTP_ONLY=false`)
-- `secure`: `true` solo en producción (`NODE_ENV=production`)
-- `sameSite`: `lax` por defecto
+- `secure`: valor de `SECURE`; por defecto `true` en producción
+- `sameSite`: `lax` por defecto (valores admitidos: `lax`, `strict`, `none`)
 - `path`: `/`
 
 ---
 
 ## JWT
 
-Dos tipos de token, ambos firmados con `JWT_SECRET`:
+Dos tipos de token, ambos firmados con `JWT_SECRET` y con `iss`/`aud` fijos:
 
 | Token | Función | Expiración | Payload |
 |-------|---------|------------|---------|
-| `emailValidJWToken` | Temporal para verificación de email (se envía dentro de la cookie `emailSendToVerifyUser`) | 2 minutos | `{ userEmail }` |
-| `userAuthJWToken` | Sesión de autenticación (viaja en el header `Authorization: Bearer`) | 2 días | `{ userEmail }` |
+| `emailValidJWToken` | Temporal para verificación de email (se envía dentro de la cookie `emailSendToVerifyUser`) | 2 minutos | `{ userEmail, typ: "email_verification" }` |
+| `userAuthJWToken` | Sesión de autenticación (viaja en el header `Authorization: Bearer`) | 2 días | `{ userEmail, typ: "session" }` |
+
+`authJWT` rechaza cualquier token cuyo `typ` no sea `session`, y `verifySendToEmail` exige `typ: "email_verification"`. Así un token temporal de verificación no puede usarse para acceder a rutas protegidas.
 
 ---
 
@@ -128,7 +134,7 @@ Función `validateDomain` en `src/utils/validateUserData.ts`:
 7. **Longitud del hostname** — ≤253 caracteres
 8. **IPs privadas** — detecta IPv4 (10.x, 172.16-31.x, 192.168.x, loopback, CGNAT, multicast) e IPv6 (loopback, ULA, link-local, IPv4-mapped)
 9. **Hosts locales** — rechaza `localhost`, `*.localhost`, `*.local`, `*.internal`
-10. **IPs literales** — rechaza direcciones IP en formato numérico o hexadecimal
+10. **IPs literales** — solo se permiten IPs públicas; las privadas, reservadas y multicast se rechazan
 11. **Formato del dominio** — solo alfanumérico, guiones, puntos; sin `..`
 12. **Labels del dominio** — ≤63 caracteres, sin guiones al inicio/final
 13. **TLD** — ≥2 letras

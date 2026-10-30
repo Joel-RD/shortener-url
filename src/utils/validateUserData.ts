@@ -1,10 +1,21 @@
 /**
+ * Normaliza un email para almacenarlo y compararlo de forma consistente.
+ * SQLite compara TEXT de forma case-sensitive, por lo que sin esto
+ * "User@X.com" y "user@x.com" podrían crear cuentas distintas.
+ */
+export function normalizeEmail(email: string): string {
+    return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+/**
  * Valida si un email es válido y pertenece a dominios permitidos
  * @param email - Email a validar
  * @returns objeto con isValid y mensaje de error si aplica
  */
-export function validateEmail(email: string): { isValid: boolean; error?: string } {
-    if (!email || email.trim() === '') {
+export function validateEmail(rawEmail: string): { isValid: boolean; error?: string } {
+    const email = normalizeEmail(rawEmail);
+
+    if (email === '') {
         return { isValid: false, error: 'El email no puede estar vacío' };
     }
 
@@ -95,6 +106,10 @@ export function validatePassword(password: string): {
         'admin123', 'letmein', 'welcome', 'monkey', '1234567890'
     ];
 
+    if (commonPasswords.includes(password.toLowerCase())) {
+        errors.push('La contraseña es demasiado común');
+    }
+
     // Validar secuencias numéricas o alfabéticas
     if (/(?:012|123|234|345|456|567|678|789|890|abc|bcd|cde|def)/i.test(password)) {
         errors.push('Evita secuencias predecibles de números o letras');
@@ -134,8 +149,10 @@ export function validateRegistration(data: {
     const errors: string[] = [];
 
     // Validar username
-    if (data.username && data.username.trim().length < 3) {
+    if (!data.username || data.username.trim().length < 3) {
         errors.push('El nombre de usuario debe tener al menos 3 caracteres');
+    } else if (data.username.trim().length > 50) {
+        errors.push('El nombre de usuario no puede superar los 50 caracteres');
     }
 
     // Validar email
@@ -192,12 +209,14 @@ function isPrivateIPv4(ip: string): boolean {
 function isPrivateIPv6(ip: string): boolean {
     const lower = ip.toLowerCase();
 
-    if (lower === "::1") return true;                                          // loopback
+    if (lower === "::" || lower === "::1") return true;                         // unspecified / loopback
 
     if (lower.startsWith("fc") || lower.startsWith("fd")) return true;          // fc00::/7 (ULA)
 
     if (lower.startsWith("fe8") || lower.startsWith("fe9") ||                   // fe80::/10 (link-local)
         lower.startsWith("fea") || lower.startsWith("feb")) return true;
+
+    if (lower.startsWith("ff")) return true;                                     // ff00::/8 (multicast)
 
     const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)/);                // IPv4-mapped
     if (mapped && mapped[1]) return isPrivateIPv4(mapped[1]);
@@ -288,14 +307,10 @@ export function validateDomain(original_url: string): { isValid: boolean; error?
             ? isPrivateIPv4(ipHost)
             : isPrivateIPv6(ipHost);
 
-        if (isPrivate) {
-            return {
-                isValid: false,
-                error: "La URL no puede apuntar a IPs privadas o internas"
-            };
-        }
-return { isValid: true };
-}
+        return isPrivate
+            ? { isValid: false, error: "La URL no puede apuntar a IPs privadas o internas" }
+            : { isValid: true };
+    }
 
     const lowerHost = hostname.toLowerCase();
     if (
@@ -308,13 +323,6 @@ return { isValid: true };
         return {
             isValid: false,
             error: "La URL no puede apuntar a hosts locales o internos"
-        };
-    }
-
-    if (/^[\d.]+$/.test(hostname) || /^0x[0-9a-f]+$/i.test(hostname)) {
-        return {
-            isValid: false,
-            error: "La URL no puede apuntar a direcciones IP"
         };
     }
 
@@ -343,6 +351,3 @@ return { isValid: true };
 
     return { isValid: true };
 }
-
-/** Alias de compatibilidad para `validateDomain` */
-export const validateDonmail = validateDomain;

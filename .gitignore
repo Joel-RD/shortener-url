@@ -1,7 +1,8 @@
 example-run
 node_modules
 .env
-src/Database/*
+src/Database/*.db
+src/Database/*.db-*
 /dist
 coverage
 assets/desing-shortener

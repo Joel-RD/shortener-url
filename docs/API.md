@@ -17,9 +17,9 @@
 
 | Método | Ruta | Descripción | Protegido | Rate limit |
 |--------|------|-------------|-----------|------------|
-| `POST` | `/api/v1/auth/register` | Registrar usuario | No | 4/día (prod) |
-| `POST` | `/api/v1/auth/login` | Iniciar sesión | No | 4/día (prod) |
-| `POST` | `/api/v1/auth/verify-email` | Verificar código de email | Temporal | 4/día (prod) |
+| `POST` | `/api/v1/auth/register` | Registrar usuario | No | 20/15 min (prod) |
+| `POST` | `/api/v1/auth/login` | Iniciar sesión | No | 20/15 min (prod) |
+| `POST` | `/api/v1/auth/verify-email` | Verificar código de email | Temporal | 20/15 min (prod) |
 | `GET` | `/api/v1/auth/user/profile` | Consultar perfil del usuario | JWT | — |
 
 ---
@@ -57,7 +57,9 @@ Busca la URL acortada y redirige con un `302 Found`. Si no existe o está inacti
 | Resultado | Respuesta |
 |-----------|-----------|
 | URL encontrada | `302` con cabecera `Location: <original_url>` |
-| URL no encontrada | `404` |
+| Formato de código inválido | `400` (`INVALID_SHORT_URL`) |
+| URL no encontrada | `404` (`SHORT_URL_NOT_FOUND`) |
+| Destino ya no permitido | `410` (`DESTINATION_URL_NOT_ALLOWED`) |
 
 ---
 
@@ -67,11 +69,14 @@ El sistema usa un proceso de **3 pasos** con verificación de email por código:
 
 <img src="diagrams/auth-flow.svg" width="100%" alt="Secuencia de autenticación: registro/login, código por email y JWT de sesión">
 
-1. **Registro o Login** → se envía un código de 6 caracteres por email y se establece la cookie temporal `emailSendToVerifyUser` (JWT, 2 minutos).
-2. **Verificación del código** → el cliente envía el código y, si es correcto, recibe el JWT de sesión `authToken` en el body de la respuesta (2 días de duración).
+1. **Registro o Login** → se envía un código de 6 caracteres (A-Z0-9) por email y se establece la cookie temporal `emailSendToVerifyUser` (JWT, 2 minutos).
+2. **Verificación del código** → el cliente envía el código (se normaliza a mayúsculas) y, si es correcto, recibe el JWT de sesión `authToken` en el body de la respuesta (2 días de duración).
 3. **Rutas protegidas** → el middleware `authJWT` valida el `authToken` en el header `Authorization: Bearer <token>` de cada petición.
 
-> **Nota:** si el usuario intenta login o registro mientras tiene un código de verificación activo, recibe un error `429` con el tiempo restante en minutos.
+> **Notas:**
+> - Los emails se normalizan (`trim` + minúsculas) antes de almacenarse y compararse.
+> - Un login con email inexistente o contraseña incorrecta devuelve el mismo `401 Credenciales no válidas` para no revelar qué cuentas existen.
+> - Si el usuario intenta login mientras tiene un código de verificación activo, recibe un error `429` con el tiempo restante en minutos.
 
 ### `POST /api/v1/auth/register` — Registrar usuario
 
@@ -134,7 +139,7 @@ Requiere la cookie `emailSendToVerifyUser` previamente establecida (por registro
 ```json
 {
   "email": "correo@ejemplo.com",
-  "code": "aB3xY9"
+  "code": "AB3XY9"
 }
 ```
 
@@ -247,30 +252,32 @@ Todas las respuestas de la API usan un envoltorio unificado construido por `src/
 
 | `error.code` | Status | Significado |
 |--------------|--------|-------------|
-| `BAD_REQUEST` | `400` | Solicitud incorrecta (validación) |
-| `UNAUTHORIZED` | `401` | No autorizado (token faltante, expirado o inválido) |
-| `FORBIDDEN` | `403` | Prohibido (token no corresponde al email) |
+| `BAD_REQUEST` | `400` | Solicitud incorrecta (validación, código incorrecto o JSON malformado) |
+| `UNAUTHORIZED` | `401` | No autorizado (token faltante, expirado, tipo incorrecto o credenciales inválidas) |
+| `FORBIDDEN` | `403` | Prohibido (token no corresponde al email, email no verificado o cuenta inactiva) |
 | `NOT_FOUND` | `404` | Recurso no encontrado |
 | `CONFLICT` | `409` | Conflicto (email ya registrado) |
 | `GONE` | `410` | Gone (URL de destino no permitida) |
 | `TOO_MANY_REQUESTS` | `429` | Demasiadas solicitudes (rate limit o límite de intentos) |
 | `INTERNAL_SERVER_ERROR` | `500` | Error interno del servidor |
+| `EMAIL_SEND_FAILED` | `502` | El correo de verificación no pudo enviarse |
 
-Los `AppError` pueden además definir códigos semánticos específicos (p. ej. `TOKEN_EXPIRED`, `TOKEN_MISSING`, `RATE_LIMITED`, `EMAIL_ALREADY_REGISTERED`).
+Los `AppError` pueden además definir códigos semánticos específicos (p. ej. `TOKEN_EXPIRED`, `TOKEN_MISSING`, `TOKEN_TYPE_INVALID`, `RATE_LIMITED`, `EMAIL_ALREADY_REGISTERED`, `INVALID_JSON`).
 
 ### Códigos de estado
 
 | Código | Significado |
 |--------|-------------|
 | `200` / `201` | Operación exitosa |
-| `400` | Solicitud incorrecta (validación) |
-| `401` | No autorizado (token faltante, expirado o inválido) |
-| `403` | Prohibido (token no corresponde al email) |
+| `400` | Solicitud incorrecta (validación, código incorrecto o JSON malformado) |
+| `401` | No autorizado (token faltante, expirado, tipo incorrecto o credenciales inválidas) |
+| `403` | Prohibido (token no corresponde al email, email no verificado o cuenta inactiva) |
 | `404` | Recurso no encontrado |
 | `409` | Conflicto (email ya registrado) |
 | `410` | Gone (URL de destino no permitida) |
 | `429` | Demasiadas solicitudes (rate limit o límite de intentos) |
 | `500` | Error interno del servidor |
+| `502` | Fallo al enviar el correo de verificación |
 
 ---
 

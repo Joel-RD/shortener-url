@@ -41,6 +41,7 @@ describe('validateUserData', () => {
     describe('validateRegistration', () => {
         it('should return valid for correct registration data', () => {
             const data = {
+                username: 'testuser',
                 email: 'test@gmail.com',
                 password: 'StrongP@ssw0rd!',
                 name: 'Test',

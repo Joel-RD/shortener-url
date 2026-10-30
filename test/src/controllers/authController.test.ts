@@ -33,20 +33,30 @@ describe('AuthController', () => {
         res = {
             status: jest.fn().mockReturnThis(),
             json: jest.fn(),
-            cookie: jest.fn()
+            cookie: jest.fn(),
+            clearCookie: jest.fn()
         };
         next = jest.fn();
         jest.clearAllMocks();
     });
 
     describe('authRegisterController', () => {
-        it('should return 409 when there is no request body', async () => {
+        it('should return 400 when required fields are missing', async () => {
+            req.body = {};
+
+            await controller.authRegisterController(req as Request, res as Response, next);
+
+            expectAppError(next, 400, 'El nombre de usuario, el email y la contraseña son obligatorios');
+            expect(res.json).not.toHaveBeenCalled();
+            expect(authService.register).not.toHaveBeenCalled();
+        });
+
+        it('should return 400 when the body is undefined', async () => {
             req.body = undefined;
 
             await controller.authRegisterController(req as Request, res as Response, next);
 
-            expectAppError(next, 409, 'El cuerpo de la solicitud es obligatorio');
-            expect(res.json).not.toHaveBeenCalled();
+            expectAppError(next, 400, 'El nombre de usuario, el email y la contraseña son obligatorios');
             expect(authService.register).not.toHaveBeenCalled();
         });
 
@@ -74,13 +84,22 @@ describe('AuthController', () => {
     });
 
     describe('authLoginController', () => {
-        it('should return 409 when there is no request body', async () => {
+        it('should return 400 when required fields are missing', async () => {
+            req.body = {};
+
+            await controller.authLoginController(req as Request, res as Response, next);
+
+            expectAppError(next, 400, 'El email y la contraseña son obligatorios');
+            expect(res.json).not.toHaveBeenCalled();
+            expect(authService.login).not.toHaveBeenCalled();
+        });
+
+        it('should return 400 when the body is undefined', async () => {
             req.body = undefined;
 
             await controller.authLoginController(req as Request, res as Response, next);
 
-            expectAppError(next, 409, 'El cuerpo de la solicitud es obligatorio');
-            expect(res.json).not.toHaveBeenCalled();
+            expectAppError(next, 400, 'El email y la contraseña son obligatorios');
             expect(authService.login).not.toHaveBeenCalled();
         });
 
@@ -126,7 +145,10 @@ describe('AuthController', () => {
             await controller.postAuthVerifyEmailController(req as Request, res as Response, next);
 
             expect(authService.verifyEmailCode).toHaveBeenCalledWith({ email: 'test@gmail.com', code: 'ABC123' });
-            expect(res.cookie).not.toHaveBeenCalled();
+            expect(res.clearCookie).toHaveBeenCalledWith(
+                'emailSendToVerifyUser',
+                expect.objectContaining({ path: '/' })
+            );
             expect(res.status).toHaveBeenCalledWith(200);
             expect(res.json).toHaveBeenCalledWith({
                 success: true,

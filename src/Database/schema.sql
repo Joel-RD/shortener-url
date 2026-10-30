@@ -5,8 +5,8 @@
 -- Tabla de usuarios
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    email TEXT UNIQUE NOT NULL,
+    username TEXT COLLATE NOCASE UNIQUE NOT NULL,
+    email TEXT COLLATE NOCASE UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     name TEXT,
     last_name TEXT,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS urls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     original_url TEXT NOT NULL,
-    short_url TEXT UNIQUE NOT NULL, 
+    short_url TEXT UNIQUE NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME,
     views INTEGER DEFAULT 0,
@@ -35,11 +35,13 @@ CREATE TABLE IF NOT EXISTS urls (
 );
 
 -- Tabla de códigos de verificación
+-- `code` no es UNIQUE: dos emails distintos podrían generar el mismo código
+-- y el upsert se resuelve por `email`.
 CREATE TABLE IF NOT EXISTS verification_codes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     email TEXT UNIQUE,
-    code TEXT UNIQUE,
+    code TEXT,
     attempt_count INTEGER DEFAULT 0,
     blocked_until DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -64,6 +66,9 @@ CREATE INDEX IF NOT EXISTS idx_verification_email ON verification_codes(email);
 CREATE INDEX IF NOT EXISTS idx_verification_expires ON verification_codes(expires_at);
 CREATE INDEX IF NOT EXISTS idx_verification_used ON verification_codes(used);
 
+-- ============================================
+-- TRIGGERS
+-- ============================================
 
 -- Trigger 1: Eliminar códigos de verificación expirados
 CREATE TRIGGER IF NOT EXISTS delete_expired_verification_codes
@@ -83,4 +88,10 @@ BEGIN
     WHERE id = NEW.id;
 END;
 
-
+-- Trigger 3: Mantener updated_at al día
+CREATE TRIGGER IF NOT EXISTS update_users_updated_at
+AFTER UPDATE ON users
+FOR EACH ROW
+BEGIN
+    UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;

@@ -78,12 +78,13 @@ erdl-backend/
 │   ├── config.ts                    # Configuración centralizada desde variables de entorno
 │   ├── Database/
 │   │   ├── databases.ts             # Cliente LibSQL (SQLite local / Turso)
+│   │   ├── migrate.ts               # Aplica schema.sql de forma idempotente
 │   │   ├── databases.db             # Base de datos local (desarrollo)
-│   │   └── sheme.sql                # Esquema de la base de datos
+│   │   └── schema.sql               # Esquema de la base de datos
 │   ├── models/
 │   │   └── types.ts                 # Interfaces y tipos TypeScript
 │   ├── routers/
-│   │   ├── usersRouters.ts          # Rutas de acortamiento y redirección
+│   │   ├── urlRouter.ts             # Rutas de acortamiento y redirección
 │   │   ├── userAuthRouter.ts        # Rutas de registro, login y verificación
 │   │   └── protectedRoutes.ts       # Rutas protegidas por JWT
 │   ├── controllers/

@@ -19,7 +19,7 @@ export default {
             useESM: true
         }]
     },
-    collectCoverage: true,
+    collectCoverage: false,
     coverageDirectory: 'coverage',
     moduleNameMapper: {
         '^(\\.{1,2}/.*)\\.js$': '$1',

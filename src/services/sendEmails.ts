@@ -5,7 +5,9 @@ import logger from "../utils/logger.js";
 
 const { configSendEmail } = config;
 
-interface EmailServiceConfig { emailUser: string }
+interface EmailServiceConfig {
+    emailUser: string;
+}
 
 class EmailService {
     private transport: Transporter;
@@ -30,7 +32,7 @@ class EmailService {
     private async sendMail(to: string, subject: string, text: string, html: string) {
         try {
             return await this.transport.sendMail({
-                from: `"Midnight Services" <${this.emailConfig.emailUser}>`,
+                from: `"ERDL URL Shortener" <${this.emailConfig.emailUser}>`,
                 to, subject, text, html
             });
         } catch (error) {
@@ -46,5 +48,4 @@ class EmailService {
     }
 }
 
-// Opcional: instancia por defecto para compatibilidad
 export const emailService = new EmailService();

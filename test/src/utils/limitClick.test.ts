@@ -1,9 +1,9 @@
-import { redirectShort, url_Short, limitAuthButton } from '../../../src/utils/limitClick';
+import { limitAuthButton, redirectRateLimit, shortenRateLimit } from '../../../src/utils/limitClick';
 
 describe('Rate Limit Utils', () => {
     it('should export middleware functions', () => {
-        expect(typeof redirectShort).toBe('function');
-        expect(typeof url_Short).toBe('function');
+        expect(typeof shortenRateLimit).toBe('function');
+        expect(typeof redirectRateLimit).toBe('function');
         expect(typeof limitAuthButton).toBe('function');
     });
 });

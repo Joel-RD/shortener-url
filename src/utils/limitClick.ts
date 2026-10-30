@@ -1,11 +1,11 @@
-import { rateLimit, ipKeyGenerator } from 'express-rate-limit'
-import {config} from "../config.js"
-import { Request, Response } from 'express'
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
+import { config } from "../config.js";
+import { Request, Response } from "express";
 import { AppError } from "./AppError.js";
 import { buildErrorBody } from "./responseFormat.js";
 
-const {nodeEnv} = config;
-const isStressTest = process.env.STRESS_TEST === 'true';
+const { isProduction } = config;
+const isStressTest = process.env.STRESS_TEST === "true";
 
 function rateLimitErrorHandler(message: string) {
     return (req: Request, res: Response) => {
@@ -14,46 +14,39 @@ function rateLimitErrorHandler(message: string) {
     };
 }
 
+function clientKey(req: Request): string {
+    return ipKeyGenerator(req.ip ?? "");
+}
+
 // Rate limit para la creación de URLs (POST /api/v1/short)
 export const shortenRateLimit = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hora
-    limit: isStressTest ? 10000000 : (nodeEnv !== "production" ? 1000000 : 5000),
+    limit: isStressTest ? 10_000_000 : (isProduction ? 5_000 : 1_000_000),
     standardHeaders: true,
     legacyHeaders: false,
     skip: () => isStressTest,
-    message: "Has alcanzado el límite de generación de URLs. Por favor, inténtalo de nuevo en una hora.",
     handler: rateLimitErrorHandler("Has alcanzado el límite de generación de URLs. Por favor, inténtalo de nuevo en una hora."),
-    keyGenerator: (req: Request): string => {
-        return ipKeyGenerator(req.ip || '');
-    }
+    keyGenerator: clientKey,
 });
 
 // Rate limit para las redirecciones (GET /:shortUrl)
 export const redirectRateLimit = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hora
-    limit: isStressTest ? 10000000 : (nodeEnv !== "production" ? 1000000 : 50000),
+    limit: isStressTest ? 10_000_000 : (isProduction ? 50_000 : 1_000_000),
     standardHeaders: true,
     legacyHeaders: false,
     skip: () => isStressTest,
-    message: "Has alcanzado el límite de redirecciones. Por favor, inténtalo de nuevo en una hora.",
     handler: rateLimitErrorHandler("Has alcanzado el límite de redirecciones. Por favor, inténtalo de nuevo en una hora."),
-    keyGenerator: (req: Request): string => {
-        return ipKeyGenerator(req.ip || '');
-    }
+    keyGenerator: clientKey,
 });
 
-// Alias para mantener compatibilidad
-export const redirectShort = shortenRateLimit;
-export const url_Short = redirectRateLimit;
-
+// Rate limit para los endpoints de autenticación (registro, login y verificación).
 export const limitAuthButton = rateLimit({
-    windowMs: 24 * 60 * 60 * 1000,
-    limit: !config.isProduction ? 2000 : 4,
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    limit: isStressTest ? 10_000_000 : (isProduction ? 20 : 2_000),
     standardHeaders: true,
     legacyHeaders: false,
-    message: "Has alcanzado el límite diario de redirecciones. Por favor, inténtalo de nuevo mañana.",
-    handler: rateLimitErrorHandler("Has alcanzado el límite diario de redirecciones. Por favor, inténtalo de nuevo mañana."),
-    keyGenerator: (req: Request): string => {
-        return ipKeyGenerator(req.ip || '');
-    }
+    skip: () => isStressTest,
+    handler: rateLimitErrorHandler("Has alcanzado el límite de intentos de autenticación. Por favor, inténtalo de nuevo más tarde."),
+    keyGenerator: clientKey,
 });

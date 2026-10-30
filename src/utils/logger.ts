@@ -1,13 +1,8 @@
 import winston from 'winston';
 import path from 'path';
 
-// Get directory - check if import.meta is available
-const isESM = typeof import.meta !== 'undefined' && import.meta.url;
-const appDirname = isESM 
-  ? path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Z]:)/, '$1')
-  : process.cwd();
-
 const isProduction = process.env.NODE_ENV === 'production';
+const logsDir = path.join(process.cwd(), 'logs');
 
 // Formato para desarrollo - legible y con colores
 const devFormat = winston.format.combine(
@@ -36,7 +31,7 @@ const prodFormat = winston.format.combine(
 // Configuración de archivos rotativos
 const getFileTransportOptions = (filename: string): winston.transports.FileTransportOptions => ({
   filename,
-  dirname: path.join(appDirname, '../../logs'),
+  dirname: logsDir,
   maxsize: 5 * 1024 * 1024, // 5MB
   maxFiles: 5,
 });
@@ -53,7 +48,7 @@ const logger = winston.createLogger({
       level: 'error',
       silent: process.env.STRESS_TEST === 'true'
     }),
-    // Transport para todos los logs 
+    // Transport para todos los logs
     new winston.transports.File({
       ...getFileTransportOptions('combined.log'),
       silent: process.env.STRESS_TEST === 'true'
@@ -61,8 +56,8 @@ const logger = winston.createLogger({
   ],
 });
 
-// Agregar transport de consola en desarrollo
-if (!isProduction) {
+// Agregar transport de consola en desarrollo (no en tests)
+if (!isProduction && process.env.NODE_ENV !== 'test') {
   logger.add(
     new winston.transports.Console({
       format: devFormat,
@@ -72,12 +67,12 @@ if (!isProduction) {
 
 // Logger personalizado que exporta métodos convenientes
 export const log = {
-  info: (message: string, meta?: Record<string, unknown>) => logger.info(message, { ...meta, timestamp: new Date().toISOString() }),
-  warn: (message: string, meta?: Record<string, unknown>) => logger.warn(message, { ...meta, timestamp: new Date().toISOString() }),
-  error: (message: string, meta?: Record<string, unknown>) => logger.error(message, { ...meta, timestamp: new Date().toISOString() }),
-  debug: (message: string, meta?: Record<string, unknown>) => logger.debug(message, { ...meta, timestamp: new Date().toISOString() }),
+  info: (message: string, meta?: Record<string, unknown>) => logger.info(message, meta),
+  warn: (message: string, meta?: Record<string, unknown>) => logger.warn(message, meta),
+  error: (message: string, meta?: Record<string, unknown>) => logger.error(message, meta),
+  debug: (message: string, meta?: Record<string, unknown>) => logger.debug(message, meta),
 };
 
-// Exportar logger completo y funciones individuales
+// Exportar logger completo
 export { logger };
 export default logger;

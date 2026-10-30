@@ -51,7 +51,7 @@ describe('UrlController', () => {
             await controller.redirectShortController(req as Request, res as Response);
 
             expect(urlService.redirect).toHaveBeenCalledWith('abc12345');
-            expect(res.redirect).toHaveBeenCalledWith('https://www.google.com');
+            expect(res.redirect).toHaveBeenCalledWith(302, 'https://www.google.com');
         });
     });
 });

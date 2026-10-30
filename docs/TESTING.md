@@ -18,10 +18,10 @@ npm test
 |---------|---------|
 | **Framework** | Jest con preset ESM (`ts-jest/presets/default-esm`) |
 | **Entorno** | Node.js |
-| **Setup** | `test/setup.ts` establece `NODE_ENV=test`, `JWT_SECRET` y `STRESS_TEST=true` |
-| **HTTP tests** | Supertest |
+| **Setup** | `test/setup.ts` establece `NODE_ENV=test`, `JWT_SECRET`, `STRESS_TEST=true` y una BD temporal vía `DB_FILE` |
+| **HTTP tests** | Supertest (tests de integración de rutas) |
 | **Cobertura** | Habilitada, directorio `coverage/` |
-| **Module mapping** | `*.js` → extensión eliminada para compatibilidad ESM |
+| **Tipos** | `npm run typecheck` (TypeScript en modo `strict`) |
 
 ### Estructura de tests
 
@@ -34,8 +34,8 @@ test/
 │   ├── controllers/                  # authController, urlController
 │   ├── services/                     # authService, urlService, sendEmails
 │   ├── repository/                   # urlRepository, userAuthRepository
-│   ├── Middleware/                   # authJWT
-│   ├── middleware/                   # errorHandler
+│   ├── integration/                  # rutas HTTP con Supertest (404, shorten, auth)
+│   ├── middleware/                   # authJWT, errorHandler
 │   └── utils/                        # AppError, attemptLimiter, codeValidatedEmail,
 │                                     # jwt, limitClick, nanoidTool, password_encrypt,
 │                                     # validateUserData

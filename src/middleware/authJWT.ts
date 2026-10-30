@@ -1,20 +1,9 @@
-import jwt from "jsonwebtoken";
-import { CustomJwtPayload } from "../models/types.js"
 import { NextFunction, Response } from "express";
-import { RequestModel as Request } from "../models/types.js"
-import { config } from "../config.js";
+import jwt from "jsonwebtoken";
+import { CustomJwtPayload, IAuthRepository, RequestModel as Request } from "../models/types.js";
+import { verifyJwtToken } from "../utils/jwt.js";
 import { AppError } from "../utils/AppError.js";
-
-const JWT_SECRET = config.jwtSecret;
-
-function verifyToken(token: string): Promise<CustomJwtPayload> {
-    return new Promise((resolve, reject) => {
-        jwt.verify(token, JWT_SECRET, (err: unknown, decoded: unknown) => {
-            if (err) return reject(err);
-            resolve(decoded as CustomJwtPayload);
-        });
-    });
-}
+import { normalizeEmail } from "../utils/validateUserData.js";
 
 function respondTokenError(err: unknown, next: NextFunction): void {
     if (err instanceof jwt.TokenExpiredError) {
@@ -39,8 +28,13 @@ export async function authJWT(req: Request, res: Response, next: NextFunction) {
     }
 
     try {
-        const user = await verifyToken(token);
-        req.userEmail = user.userEmail;
+        const user: CustomJwtPayload = verifyJwtToken(token);
+
+        if (user.typ !== "session") {
+            return next(new AppError(401, "No autorizado: se requiere un token de sesión", undefined, "TOKEN_TYPE_INVALID"));
+        }
+
+        req.userEmail = normalizeEmail(user.userEmail);
         next();
     } catch (err) {
         respondTokenError(err, next);
@@ -48,7 +42,7 @@ export async function authJWT(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function verifySendToEmail(req: Request, res: Response, next: NextFunction) {
-    if (!req.cookies.emailSendToVerifyUser) {
+    if (!req.cookies?.emailSendToVerifyUser) {
         return next(new AppError(401, "No autorizado: no hay sesión de verificación", undefined, "VERIFICATION_SESSION_MISSING"));
     }
 
@@ -64,18 +58,57 @@ export async function verifySendToEmail(req: Request, res: Response, next: NextF
         return next(new AppError(401, "No autorizado: no hay token de verificación", undefined, "VERIFICATION_TOKEN_MISSING"));
     }
 
-    const bodyEmail = req.body?.email;
+    const bodyEmail = normalizeEmail(req.body?.email);
     if (!bodyEmail) {
-        return next();
+        // Falla cerrado: sin email no se puede comprobar que el token corresponda.
+        return next(new AppError(401, "No autorizado: el email es obligatorio", undefined, "EMAIL_REQUIRED"));
     }
 
     try {
-        const decoded = await verifyToken(token);
-        if (decoded.userEmail !== bodyEmail) {
+        const decoded = verifyJwtToken(token);
+
+        if (decoded.typ !== "email_verification") {
+            return next(new AppError(401, "No autorizado: se requiere un token de verificación", undefined, "TOKEN_TYPE_INVALID"));
+        }
+
+        if (normalizeEmail(decoded.userEmail) !== bodyEmail) {
             return next(new AppError(403, "Prohibido: el token no corresponde al email indicado", undefined, "TOKEN_EMAIL_MISMATCH"));
         }
+
         next();
     } catch (err) {
         respondTokenError(err, next);
     }
+}
+
+/**
+ * Comprueba que el usuario del token siga existiendo, tenga el email
+ * verificado y la cuenta activa. Debe usarse después de `authJWT`.
+ */
+export function requireActiveUser(repository: Pick<IAuthRepository, "findByEmail">) {
+    return async (req: Request, res: Response, next: NextFunction) => {
+        const email = req.userEmail;
+        if (!email) {
+            return next(new AppError(401, "No autorizado: no se proporcionó token", undefined, "TOKEN_MISSING"));
+        }
+
+        try {
+            const user = await repository.findByEmail(email);
+            if (!user) {
+                return next(new AppError(401, "No autorizado: usuario no encontrado", undefined, "USER_NOT_FOUND"));
+            }
+
+            if (Number(user.email_verified) !== 1) {
+                return next(new AppError(403, "Prohibido: el email no está verificado", undefined, "EMAIL_NOT_VERIFIED"));
+            }
+
+            if (user.account_active !== undefined && user.account_active !== null && Number(user.account_active) === 0) {
+                return next(new AppError(403, "Prohibido: la cuenta está desactivada", undefined, "ACCOUNT_INACTIVE"));
+            }
+
+            next();
+        } catch (err) {
+            next(err);
+        }
+    };
 }

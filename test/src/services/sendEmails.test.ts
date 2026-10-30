@@ -37,7 +37,7 @@ describe('EmailService (emailService instance)', () => {
 
         expect(result).toEqual({ messageId: '1' });
         expect(sendMailMock).toHaveBeenCalledWith({
-            from: expect.stringContaining('Midnight Services'),
+            from: expect.stringContaining('ERDL URL Shortener'),
             to: 'user@example.com',
             subject: 'Verifica tu correo electrónico',
             text: 'Tu código de verificación es: ABC123',
